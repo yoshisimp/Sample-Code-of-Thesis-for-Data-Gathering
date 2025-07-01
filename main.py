@@ -1,64 +1,102 @@
 import cv2
-import torch
-from face_recognition_module import recognize_faces
-from emotion_detector import EmotionRecognizer
-from speech_to_text import transcribe_speech
-from logger import Logger
-from summary_report import generate_emotion_chart
-from datetime import datetime
+from yolov10.detector import YOLOv10Detector
+from face_module.face_recognition_module import FaceRecognizer
+from emotion_module.emotion_detector import EmotionDetector
+from speech_module.speech_to_text import transcribe_speech
+from logger.logger import BehaviorLogger
+import datetime
 import os
 
-# Load YOLOv10 model
-model = torch.hub.load('ultralytics/yolov5', 'custom', 'yolov10s.pt')
+def log_emotion(name, emotion):
+    os.makedirs("logs", exist_ok=True)
+    with open("logs/emotion_log.csv", "a") as f:
+        timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        f.write(f"{timestamp},{name},{emotion}\n")
 
-# Load Emotion Recognizer
-emotion_model = EmotionRecognizer('models/emotion_model.h5')
+def main():
+    print("[🚀 System Starting...]")
 
-# Logger
-logger = Logger()
+    # 🎥 Initialize webcam
+    cap = cv2.VideoCapture(0)
 
-# Distraction objects
-DISTRACTION_OBJECTS = ["cell phone", "laptop", "tv", "bottle", "cup", "bowl", "sandwich", "remote", "book"]
+    # ✅ Set resolution
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
 
-# Start Webcam
-cap = cv2.VideoCapture(0)
+    if not cap.isOpened():
+        print("❌ Error: Cannot access webcam")
+        return
 
-frame_count = 0
-session_emotions = []
+    # 🧠 Initialize modules
+    detector = YOLOv10Detector(model_path="yolov10/yolov10s.pt")
+    recognizer = FaceRecognizer(known_faces_dir="faces")
+    emotion_model = EmotionDetector("emotion_module/emotion_model.h5")
+    logger = BehaviorLogger()
 
-while cap.isOpened():
-    ret, frame = cap.read()
-    if not ret:
-        break
+    frame_count = 0
+    print("[🟢 Running Real-Time Analysis. Press 'q' to quit.]")
 
-    frame_count += 1
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            print("[❌ Error] Failed to capture frame.")
+            break
 
-    # Detect objects with YOLOv10
-    results = model(frame)
-    detected = results.pandas().xyxy[0]
-    distraction_found = any(obj in DISTRACTION_OBJECTS for obj in detected['name'])
+        frame_count += 1
 
-    # Face recognition
-    face_names = recognize_faces(frame)
+        # 🧑 Face recognition
+        face_locations, names = recognizer.recognize(frame)
+        name = names[0] if names else "Unknown"
+        emotion = "Unknown"
 
-    # Emotion recognition
-    emotion = emotion_model.detect_emotion(frame)
-    session_emotions.append(emotion)
+        # For each recognized face
+        for (top, right, bottom, left), name in zip(face_locations, names):
+            # Crop the face
+            face_image = frame[top:bottom, left:right]
+            if face_image.size > 0:
+                try:
+                    # 🧠 Detect emotion from the cropped face
+                    emotion, emotion_probs = emotion_model.detect_emotion(face_image)
+                    print(f"[🎭 Emotion] {name}: {emotion}")
+                    log_emotion(name, emotion)
+                except Exception as e:
+                    print(f"[⚠️ Emotion Detection Error] {e}")
 
-    # Log results
-    logger.log(frame, emotion, face_names, distraction_found)
+            # 🖼️ Draw rectangle and label
+            cv2.rectangle(frame, (left, top), (right, bottom), (0, 255, 0), 2)
+            cv2.putText(frame, f"{name}, {emotion}", (left, top - 10),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2)
 
-    # Display
-    for i, name in enumerate(face_names):
-        cv2.putText(frame, f"{name}", (10, 30 + i * 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0,255,0), 2)
-    cv2.putText(frame, f"Emotion: {emotion}", (10, frame.shape[0]-10), cv2.FONT_HERSHEY_SIMPLEX, 1, (255,0,0), 2)
-    cv2.imshow("AI Counseling", frame)
+        # 🧠 YOLOv10: Distraction detection
+        detections = detector.detect(frame)
+        distractions = [d["name"] for d in detections if d["name"] in detector.distraction_list]
 
-    if cv2.waitKey(1) & 0xFF == ord('q'):
-        break
+        # 🗣️ Speech transcription every 150 frames
+        speech = ""
+        if frame_count % 150 == 0:
+            speech = transcribe_speech()
 
-cap.release()
-cv2.destroyAllWindows()
+        # 📋 Display on-screen
+        cv2.putText(frame, f"Name: {name}", (10, 30),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2)
+        cv2.putText(frame, f"Emotion: {emotion}", (10, 60),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2)
+        if distractions:
+            cv2.putText(frame, f"Distractions: {', '.join(distractions)}", (10, 90),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 100, 255), 2)
 
-# Save report
-generate_emotion_chart(session_emotions)
+        cv2.imshow("Real-Time Behavior Analysis", frame)
+
+        # 📝 Log behavior every 30 frames
+        if frame_count % 30 == 0:
+            logger.log(name=name, emotion=emotion, speech=speech, distractions=distractions)
+
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            break
+
+    cap.release()
+    cv2.destroyAllWindows()
+    print("[🛑 System Stopped]")
+
+if __name__ == "__main__":
+    main()
