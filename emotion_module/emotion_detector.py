@@ -1,19 +1,19 @@
-# emotion_module/emotion_detection_module.py
-import cv2
+# emotion_detector.py
+
+from keras.models import load_model
 import numpy as np
-from tensorflow.keras.models import load_model
+import cv2
 
 class EmotionDetector:
-    def __init__(self, model_path="emotion_model.h5"):
+    def __init__(self, model_path):
         self.model = load_model(model_path)
-        self.emotion_labels = ["Angry", "Disgust", "Fear", "Happy", "Sad", "Surprise", "Neutral"]
+        self.emotion_labels = ['angry', 'disgust', 'fear', 'happy', 'neutral', 'sad', 'surprise']
 
-    def detect_emotion(self, face_image):
-        gray = cv2.cvtColor(face_image, cv2.COLOR_BGR2GRAY)
-        resized = cv2.resize(gray, (48, 48))
-        normalized = resized / 255.0
-        reshaped = np.reshape(normalized, (1, 48, 48, 1))
-        predictions = self.model.predict(reshaped, verbose=0)
-        max_index = int(np.argmax(predictions))
-        emotion = self.emotion_labels[max_index]
-        return emotion, predictions[0]
+    def predict_emotion(self, face_img):
+        gray = cv2.cvtColor(face_img, cv2.COLOR_BGR2GRAY)
+        resized = cv2.resize(gray, (48, 48)) / 255.0
+        reshaped = resized.reshape(1, 48, 48, 1)
+
+        predictions = self.model.predict(reshaped)
+        label_index = np.argmax(predictions)
+        return self.emotion_labels[label_index], float(np.max(predictions))
