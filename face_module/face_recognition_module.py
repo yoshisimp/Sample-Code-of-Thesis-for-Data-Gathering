@@ -24,20 +24,26 @@ class FaceRecognizer:
                     if encodings:
                         self.known_face_encodings.append(encodings[0])
                         self.known_face_names.append(name)
+                        print(f"[✅ Loaded] {name} from {img_path}")
+                    else:
+                        print(f"[❌ No Face Found] in {img_path}")
+
 
     def recognize(self, frame):
-        # Resize frame for faster processing
         small_frame = cv2.resize(frame, (0, 0), fx=0.25, fy=0.25)
         rgb_small_frame = cv2.cvtColor(small_frame, cv2.COLOR_BGR2RGB)
 
-        # Detect face locations
         face_locations = face_recognition.face_locations(rgb_small_frame)
-
-        # Encode faces based on locations
         face_encodings = face_recognition.face_encodings(rgb_small_frame, face_locations)
 
-        names = []
-        for face_encoding in face_encodings:
+        valid_names = []
+        valid_locations = []
+
+        for face_encoding, face_location in zip(face_encodings, face_locations):
+            if not isinstance(face_location, (tuple, list)) or len(face_location) != 4:
+                print(f"⚠️ Skipping invalid face_location: {face_location}")
+                continue
+
             matches = face_recognition.compare_faces(self.known_face_encodings, face_encoding)
             name = "Unknown"
 
@@ -47,6 +53,7 @@ class FaceRecognizer:
                 if matches[best_match_index]:
                     name = self.known_face_names[best_match_index]
 
-            names.append(name)
+            valid_names.append(name)
+            valid_locations.append(face_location)
 
-        return names, face_locations
+        return valid_names, valid_locations
