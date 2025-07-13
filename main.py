@@ -30,7 +30,7 @@ def main():
     # 🧠 Initialize modules
     detector = YOLOv10Detector(model_path="yolov10/yolov10s.pt")
     recognizer = FaceRecognizer(known_faces_dir="faces")
-    emotion_model = EmotionDetector("emotion_module/emotion_model.h5")
+    emotion_model = EmotionDetector("emotion_module/custom_emotion_model.h5")
     logger = BehaviorLogger()
 
     frame_count = 0
@@ -45,8 +45,8 @@ def main():
         frame_count += 1
 
         # 🧑 Face recognition
-        face_locations, names = recognizer.recognize(frame)
-        name = names[0] if names else "Unknown"
+        names, face_locations = recognizer.recognize(frame)
+        print(f"[🎯 Detected Faces] {len(face_locations)}")
         emotion = "Unknown"
 
         # For each recognized face
@@ -76,20 +76,26 @@ def main():
         if frame_count % 150 == 0:
             speech = transcribe_speech()
 
-        # 📋 Display on-screen
-        cv2.putText(frame, f"Name: {name}", (10, 30),
+        # 📋 Display summary (show first name if available, or 'Unknown')
+        summary_name = names[0] if names else "Unknown"
+        summary_emotion = emotion if names else "Unknown"
+
+        cv2.putText(frame, f"Name: {summary_name}", (10, 30),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2)
-        cv2.putText(frame, f"Emotion: {emotion}", (10, 60),
+        cv2.putText(frame, f"Emotion: {summary_emotion}", (10, 60),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2)
+
         if distractions:
             cv2.putText(frame, f"Distractions: {', '.join(distractions)}", (10, 90),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 100, 255), 2)
+
 
         cv2.imshow("Real-Time Behavior Analysis", frame)
 
         # 📝 Log behavior every 30 frames
         if frame_count % 30 == 0:
-            logger.log(name=name, emotion=emotion, speech=speech, distractions=distractions)
+            logger.log(name=summary_name, emotion=summary_emotion, speech=speech, distractions=distractions)
+
 
         if cv2.waitKey(1) & 0xFF == ord('q'):
             break
